@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "types": []
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/agent-team/tsconfig.client.json" }
+  ]
+}

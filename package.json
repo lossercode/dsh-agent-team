@@ -1,0 +1,29 @@
+{
+  "name": "dsh-agent-team-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Multi-agent group chat plugin for dsh — an Agent Team you can talk to.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.28.5",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -b packages/brand packages/typert-protocol && tsx build/generate-typert.ts && tsc -b tsconfig.json && pnpm --filter @lossercode/dsh-agent-team bundle",
+    "build:vendored": "tsc -b packages/brand packages/typert-protocol",
+    "build:typert": "tsx build/generate-typert.ts",
+    "build:types": "tsc -b tsconfig.json",
+    "build:bundles": "pnpm --filter @lossercode/dsh-agent-team bundle",
+    "watch": "pnpm --filter @lossercode/dsh-agent-team watch",
+    "clean": "rm -rf packages/*/lib"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-typert-generator": "0.2.2-rc.3",
+    "@types/node": "^24.10.1",
+    "lightningcss": "^1.33.0",
+    "tsdown": "^0.22.2",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3"
+  }
+}

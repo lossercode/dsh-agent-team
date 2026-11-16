@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent Team 群组",
+    "description": "多模型 Agent 群组：通过 @提及 把任务分派给配置了不同 provider 的成员，像一个 Agent Team 一样协作。"
+  }
+}

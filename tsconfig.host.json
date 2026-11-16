@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rewriteRelativeImportExtensions": false,
+    "types": []
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/brand/tsconfig.json" },
+    { "path": "./packages/typert-protocol/tsconfig.json" },
+    { "path": "./packages/agent-team/tsconfig.host.json" }
+  ]
+}

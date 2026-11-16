@@ -1,0 +1,6 @@
+# The dsh-agent-team bundle patch: the group chat plugin as one plugin row.
+# The row name is the npm package; its `dsh.client` declaration (package.json)
+# wires the browser half and the host half is loaded as a layer-2 host.
+- insert:
+    - id: agent-team
+      name: '@lossercode/dsh-agent-team'

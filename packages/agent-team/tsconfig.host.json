@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2024", "ESNext.Disposable"],
+    "types": ["node"],
+    "outDir": "lib/types",
+    "rootDir": "src",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "incremental": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "files": [
+    "src/index.ts",
+    "src/types.ts",
+    "src/shared/groupchat.ts",
+    "src/server/store.ts",
+    "src/server/pool.ts"
+  ],
+  "references": [
+    { "path": "../brand/tsconfig.json" },
+    { "path": "../typert-protocol/tsconfig.json" }
+  ]
+}

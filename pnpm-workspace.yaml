@@ -1,0 +1,6 @@
+packages:
+  - packages/*
+onlyBuiltDependencies:
+  - esbuild
+overrides:
+  '@deepseek-ai/dsh-typert-protocol': 'workspace:*'

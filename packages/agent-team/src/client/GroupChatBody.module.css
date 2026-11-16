@@ -1,0 +1,253 @@
+/* Group chat panel: dark IM-flavored layout scoped to the sidebar occurrence. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.offline {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dsw-foreground-muted, #8a8f98);
+  background: var(--dsw-elevation-soft, rgba(255, 255, 255, 0.04));
+  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.08));
+}
+
+/* ── Timeline ──────────────────────────────────────────────── */
+
+.timeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Keep the stream a comfortable reading width, centered in wide panes. */
+  padding: 12px max(10px, calc((100% - 1280px) / 2));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rowUser {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.userBubble {
+  max-width: 82%;
+  background: rgba(77, 107, 254, 0.16);
+  border: 1px solid rgba(77, 107, 254, 0.35);
+  border-radius: 12px 12px 4px 12px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.rowAgent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+}
+
+.avatarSmall {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.bubble {
+  max-width: 82%;
+  border: 1px solid;
+  border-left-width: 3px;
+  border-radius: 4px 12px 12px 12px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bubbleHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.bubbleText {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Agent bubble markdown: MarkdownText owns typography; we only normalize
+   block margins so the document hugs the bubble padding. */
+.bubbleMarkdown :global([data-markdown-variant]) {
+  font-size: inherit;
+}
+
+.bubbleMarkdown :global([data-markdown-variant]) > :first-child {
+  margin-top: 0;
+}
+
+.bubbleMarkdown :global([data-markdown-variant]) > :last-child {
+  margin-bottom: 0;
+}
+
+.ellipsis {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.mention {
+  font-weight: 600;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.time {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.toggle {
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #6b8afd;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  text-decoration: underline;
+}
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+  padding-left: 4px;
+}
+
+/* ── Composer ───────────────────────────────────────────────── */
+
+.composerWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.popup {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 8px;
+  right: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--dsw-specific-input-major);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  padding: 4px;
+  box-shadow: var(--dsw-elevation-soft);
+  z-index: 10;
+}
+
+.option,
+.optionActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.optionActive {
+  background: rgba(77, 107, 254, 0.22);
+}
+
+.optionNone {
+  padding: 6px 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+}
+
+/* Composer: a floating card aligned with the session composer tokens
+   (ui-conversation InputBar .card): panel radius, l2 hairline stroke via the
+   elevation system, input-major surface, content font size. */
+.composer {
+  flex: 0 0 auto;
+  /* Same width axis as the timeline above. */
+  padding: 8px max(10px, calc((100% - 1280px) / 2)) 10px;
+}
+
+.card {
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-soft);
+  border-radius: var(--dsw-radius-panel);
+  background: var(--dsw-specific-input-major);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.input {
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  padding: 0;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.composerMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
