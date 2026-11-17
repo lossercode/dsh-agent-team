@@ -1,36 +1,35 @@
-/** Member roster and mention parsing shared by the host orchestrator and the web panel. */
+/** Group member matching helpers shared by the host orchestrator and the web panel. */
 import type { GroupMember } from '../types.ts'
 
 export type * from '../types.ts'
 
-/**
- * Fixed roster. Members without an explicit provider/model route run on the
- * Session default model; config can overlay routing per member id.
- */
-export const roster: readonly GroupMember[] = [
-  { id: 'router', name: '副群主', color: '#f5b642' },
-  { id: 'deepseek', name: 'DeepSeek', color: '#4d6bfe' },
-  { id: 'glm', name: 'GLM', color: '#14b8a6' },
-  { id: 'gpt', name: 'GPT', color: '#10a37f' },
+/** Accent colors cycled by member position; kept vivid on dark surfaces. */
+export const MEMBER_COLORS: readonly string[] = [
+  '#4d6bfe', '#14b8a6', '#10a37f', '#f5b642', '#e06c9f',
+  '#8b5cf6', '#f97316', '#38bdf8', '#84cc16', '#ef4444',
 ]
 
-/** Look up a member by id. */
-export function memberOf(id: string | undefined): GroupMember | undefined {
-  return roster.find(member => member.id === id)
+/**
+ * Pick the accent color for the member at `index`.
+ * @param index - zero-based member position inside the group.
+ * @returns a CSS color string.
+ */
+export function assignColor(index: number): string {
+  return MEMBER_COLORS[index % MEMBER_COLORS.length]!
 }
 
 /**
- * Resolve unique mentioned members in source order; the deputy router is
- * dropped because orchestration is not wired yet.
+ * Resolve unique mentioned members in source order.
  * @param text - raw user text that may contain @mentions.
+ * @param members - candidates to match against (the active group's members).
  * @returns mentioned members without duplicates.
  */
-export function resolveMentions(text: string): readonly GroupMember[] {
+export function resolveMentions(text: string, members: readonly GroupMember[]): readonly GroupMember[] {
   const mentioned: GroupMember[] = []
   for (const match of text.matchAll(/@([\w\u4e00-\u9fa5-]+)/g)) {
     const token = match[1]!.toLowerCase()
-    const member = roster.find(item => item.id === token || item.name.toLowerCase() === token)
-    if (member === undefined || member.id === 'router') continue
+    const member = members.find(item => item.id === token || item.name.toLowerCase() === token)
+    if (member === undefined) continue
     if (!mentioned.some(item => item.id === member.id)) mentioned.push(member)
   }
   return mentioned
@@ -43,21 +42,4 @@ export function resolveMentions(text: string): readonly GroupMember[] {
  */
 export function stripMentions(text: string): string {
   return text.replace(/@([\w\u4e00-\u9fa5-]+)/g, '').replace(/\s+/g, ' ').trim()
-}
-
-/**
- * Overlay member model routing from plugin config onto the default roster.
- * @param overrides - config-supplied provider/model pairs keyed by member id.
- * @returns the effective roster; unknown ids are ignored.
- */
-export function withOverrides(overrides: Readonly<Record<string, { provider?: string | undefined, model?: string | undefined }>>): readonly GroupMember[] {
-  return roster.map(member => {
-    const override = overrides[member.id]
-    if (override === undefined || member.id === 'router') return member
-    return {
-      ...member,
-      ...(override.provider !== undefined ? { provider: override.provider } : {}),
-      ...(override.model !== undefined ? { model: override.model } : {}),
-    }
-  })
 }

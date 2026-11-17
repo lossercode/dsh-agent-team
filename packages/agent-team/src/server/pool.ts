@@ -4,8 +4,8 @@ import { createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
-import type { GroupMember } from '../shared/groupchat.ts'
-import { resolveMentions, roster as defaultRoster, stripMentions } from '../shared/groupchat.ts'
+import type { CatalogProvider, CatalogValue, GroupMember } from '../shared/groupchat.ts'
+import { resolveMentions, stripMentions } from '../shared/groupchat.ts'
 import type { GroupChatStore } from './store.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -21,12 +21,9 @@ interface RunningTask {
   lastText: string
 }
 
-/** Effective member roster after config overlay; resolution happens per dispatch. */
-type Roster = readonly GroupMember[] | (() => readonly GroupMember[])
-
 /**
  * Dispatches @mentions to fresh Sessions and projects assistant text back onto
- * the shared timeline. Each member is a fully-capable Agent; there is no
+ * the group timeline. Each member is a fully-capable Agent; there is no
  * resident orchestrator.
  */
 export class GroupChatWorkers {
@@ -35,11 +32,10 @@ export class GroupChatWorkers {
   private sessionController: Context['sessionController'] | undefined
 
   /**
-   * @param ctx - host plugin context used for sessions, LLM validation, and events.
-   * @param store - timeline store receiving user/agent messages.
-   * @param roster - effective roster or its accessor (config overlay applied).
+   * @param ctx - host context used for sessions, LLM validation, and events.
+   * @param store - group chat store receiving groups, user/agent messages.
    */
-  constructor(private readonly ctx: Context, private readonly store: GroupChatStore, private readonly roster: Roster = defaultRoster) {}
+  constructor(private readonly ctx: Context, private readonly store: GroupChatStore) {}
 
   /** Track the Web Session controller, which arrives when the web host is ready. */
   start(): void {
@@ -70,54 +66,75 @@ export class GroupChatWorkers {
   }
 
   /**
-   * Fan one user message out to the mentioned members (no mention = no one).
+   * Aggregate the configured LLM routes into a provider-grouped model catalog.
+   * Providers whose listing fails degrade to an empty group instead of failing
+   * the whole catalog.
+   * @returns providers with their model entries, grouped by provider id.
+   */
+  async catalog(): Promise<CatalogValue> {
+    const providers = this.ctx.llm.listProviders()
+    const groups = await Promise.all(providers.map(async (provider): Promise<CatalogProvider> => {
+      try {
+        const models = await this.ctx.llm.listModels(provider.id)
+        return {
+          provider: provider.id,
+          providerName: provider.name,
+          models: models.map(model => ({ provider: model.provider, id: model.id, name: model.name })),
+        }
+      } catch {
+        return { provider: provider.id, providerName: provider.name, models: [] }
+      }
+    }))
+    return { providers: groups.filter(group => group.models.length > 0) }
+  }
+
+  /**
+   * Fan one user message out to the mentioned members of one group.
+   * @param group - the group receiving the message.
    * @param text - raw user text with @mentions.
    * @returns the members a message was actually dispatched to.
    */
-  dispatch(text: string): readonly GroupMember[] {
-    const effective = typeof this.roster === 'function' ? this.roster() : this.roster
-    const mentioned = resolveMentions(text).map(member => effective.find(item => item.id === member.id) ?? member)
+  dispatch(group: { readonly id: string, readonly members: readonly GroupMember[] }, text: string): readonly GroupMember[] {
+    const mentioned = resolveMentions(text, group.members)
     const clean = stripMentions(text) || '(空消息)'
-    this.store.append({ id: `u-${Date.now().toString(36)}`, role: 'user', text, createdAt: new Date().toISOString() })
-    for (const member of mentioned) void this.run(member, clean)
+    this.store.append({
+      id: `u-${Date.now().toString(36)}`, groupId: group.id, role: 'user', text,
+      createdAt: new Date().toISOString(),
+    })
+    for (const member of mentioned) void this.run(group.id, member, clean)
     return mentioned
   }
 
   /** Create a dedicated Session for one member and submit the task text. */
-  private async run(member: GroupMember, taskText: string): Promise<void> {
+  private async run(groupId: string, member: GroupMember, taskText: string): Promise<void> {
     const controller = this.sessionController
     if (controller === undefined) {
       this.store.append({
-        id: `a-${member.id}-${Date.now().toString(36)}`, role: 'agent', memberId: member.id,
+        id: `a-${member.id}-${Date.now().toString(36)}`, groupId, role: 'agent', memberId: member.id,
         text: `（Session 控制器不可用，${member.name} 暂时无法上线。）`, state: 'error',
         createdAt: new Date().toISOString(),
       })
       return
     }
 
-    const sessionId = SessionId(`groupchat-${member.id}-${Date.now().toString(36)}`)
+    const sessionId = SessionId(`groupchat-${groupId}-${member.id}-${Date.now().toString(36)}`)
     // Register before any await so early events cannot miss the projection.
     this.tasks.set(sessionId, { seq: -1, memberId: member.id, lastText: '' })
     try {
-      if (member.provider !== undefined && member.model !== undefined) {
-        // Fail fast when an explicitly configured route does not exist before a
-        // Session is spent; unconfigured members run on the Session default.
-        try {
-          await this.ctx.llm.resolveCallConfig({ provider: member.provider, model: member.model })
-        } catch (error: unknown) {
-          throw new Error(`模型路由不可用（${member.provider}/${member.model}）：${String(error)}`)
-        }
+      // Fail fast when the route does not exist before a Session is spent.
+      try {
+        await this.ctx.llm.resolveCallConfig({ provider: member.provider, model: member.model })
+      } catch (error: unknown) {
+        throw new Error(`模型路由不可用（${member.provider}/${member.model}）：${String(error)}`)
       }
       await controller.create({ sessionId })
       const resolved = await controller.resolveAgent(sessionId)
       if ('error' in resolved) throw resolved.error
       const agent: Agent = resolved.agent
-      if (member.provider !== undefined && member.model !== undefined) {
-        agent.model.select({ provider: member.provider, model: member.model })
-      }
+      agent.model.select({ provider: member.provider, model: member.model })
 
       const placeholder = this.store.append({
-        id: `a-${member.id}-${Date.now().toString(36)}`, role: 'agent', memberId: member.id,
+        id: `a-${member.id}-${Date.now().toString(36)}`, groupId, role: 'agent', memberId: member.id,
         sessionId, text: '', state: 'running', createdAt: new Date().toISOString(),
       })
       const task = this.tasks.get(sessionId)
@@ -144,7 +161,7 @@ export class GroupChatWorkers {
     const task = this.tasks.get(sessionId)
     if (task === undefined) return
     this.tasks.delete(sessionId)
-    const stored = this.store.listAfter(task.seq - 1).find(message => message.seq === task.seq)
+    const stored = this.store.getMessage(task.seq)
     if (stored === undefined) return
     this.store.update({ ...stored, text, state })
   }

@@ -10,6 +10,7 @@ interface Props {
   readonly placeholder: string
   readonly sendLabel: string
   readonly hint: string
+  readonly mentionNoneLabel: string
 }
 
 /**
@@ -17,7 +18,7 @@ interface Props {
  * @param props - member roster and composer labels.
  * @returns the composer row.
  */
-export function Composer({ members, onSend, placeholder, sendLabel, hint }: Props): ReactNode {
+export function Composer({ members, onSend, placeholder, sendLabel, hint, mentionNoneLabel }: Props): ReactNode {
   const [text, setText] = useState('')
   const [popup, setPopup] = useState(false)
   const [cursor, setCursor] = useState(0)
@@ -63,7 +64,7 @@ export function Composer({ members, onSend, placeholder, sendLabel, hint }: Prop
         <span className={css.avatarSmall} style={{ background: member.color }} />
         {member.name}
       </button>)}
-      {options.length === 0 && <div className={css.optionNone}>无匹配成员</div>}
+      {options.length === 0 && <div className={css.optionNone}>{mentionNoneLabel}</div>}
     </div>}
     <div className={css.composer}>
       <div className={css.card}>
