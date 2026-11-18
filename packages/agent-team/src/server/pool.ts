@@ -19,6 +19,8 @@ interface RunningTask {
   seq: number
   memberId: string
   lastText: string
+  /** Failure message of the latest failed attempt, if any; cleared by a successful reply. */
+  error: string | undefined
 }
 
 /**
@@ -45,17 +47,34 @@ export class GroupChatWorkers {
         return () => { if (this.sessionController === webCtx.sessionController) this.sessionController = undefined }
       })
     })
-    // Fire-and-forget append feed: keep each running row's latest assistant text.
+    // Fire-and-forget append feed: keep each running row's latest assistant text,
+    // and surface failures from attempts that settle without a message event.
     this.disposers.push(
       this.ctx.on('session/event', (session: Session, event) => {
-        if (event.type !== 'assistant/message') return
         const task = this.tasks.get(session.id)
         if (task === undefined) return
-        const text = event.data.message.content
-          .filter(block => block.type === 'text')
-          .map(block => block.text)
-          .join('')
-        if (text.length > 0) task.lastText = text
+        if (event.type === 'assistant/message') {
+          const text = event.data.message.content
+            .filter(block => block.type === 'text')
+            .map(block => block.text)
+            .join('')
+          if (text.length > 0) {
+            task.lastText = text
+            task.error = undefined
+          }
+          return
+        }
+        if (event.type === 'assistant/attempt') {
+          // A failed attempt never becomes an assistant/message; its terminal
+          // finish chunk carries the provider failure we want to show.
+          for (const record of event.data.stream) {
+            if (record.type !== 'chunk' || record.chunk.type !== 'finish') continue
+            const reason = record.chunk.reason
+            if (reason.kind === 'error' || reason.kind === 'aborted') {
+              task.error = reason.failure.message
+            }
+          }
+        }
       }),
     )
   }
@@ -101,6 +120,15 @@ export class GroupChatWorkers {
       id: `u-${Date.now().toString(36)}`, groupId: group.id, role: 'user', text,
       createdAt: new Date().toISOString(),
     })
+    if (mentioned.length === 0) {
+      // Visible feedback instead of a silent no-op when no member name matches.
+      this.store.append({
+        id: `a-none-${Date.now().toString(36)}`, groupId: group.id, role: 'agent',
+        text: '（没有 @ 到任何成员：输入 @ 后从补全列表选择，成员名需完整匹配。）', state: 'error',
+        createdAt: new Date().toISOString(),
+      })
+      return mentioned
+    }
     for (const member of mentioned) void this.run(group.id, member, clean)
     return mentioned
   }
@@ -119,7 +147,7 @@ export class GroupChatWorkers {
 
     const sessionId = SessionId(`groupchat-${groupId}-${member.id}-${Date.now().toString(36)}`)
     // Register before any await so early events cannot miss the projection.
-    this.tasks.set(sessionId, { seq: -1, memberId: member.id, lastText: '' })
+    this.tasks.set(sessionId, { seq: -1, memberId: member.id, lastText: '', error: undefined })
     try {
       // Fail fast when the route does not exist before a Session is spent.
       try {
@@ -150,7 +178,11 @@ export class GroupChatWorkers {
       // Quiescence of this exact agent is the completion signal; failures above
       // and below already funnel into rewrite.
       await agent.whenIdle()
-      this.rewrite(sessionId, 'done', task.lastText === '' ? '（该轮没有产生文本回复。）' : task.lastText)
+      if (task.error !== undefined) {
+        this.rewrite(sessionId, 'error', `模型调用失败：${task.error}`)
+      } else {
+        this.rewrite(sessionId, 'done', task.lastText === '' ? '（该轮没有产生文本回复。）' : task.lastText)
+      }
     } catch (error: unknown) {
       this.rewrite(sessionId, 'error', `执行出错：${String(error)}`)
     }

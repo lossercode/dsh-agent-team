@@ -26,7 +26,8 @@ export function assignColor(index: number): string {
  */
 export function resolveMentions(text: string, members: readonly GroupMember[]): readonly GroupMember[] {
   const mentioned: GroupMember[] = []
-  for (const match of text.matchAll(/@([\w\u4e00-\u9fa5-]+)/g)) {
+  // Member names are often model ids (dots, slashes); the token class must cover them.
+  for (const match of text.matchAll(/@([\w\u4e00-\u9fa5./-]+)/g)) {
     const token = match[1]!.toLowerCase()
     const member = members.find(item => item.id === token || item.name.toLowerCase() === token)
     if (member === undefined) continue
@@ -41,5 +42,5 @@ export function resolveMentions(text: string, members: readonly GroupMember[]): 
  * @returns the remaining task text.
  */
 export function stripMentions(text: string): string {
-  return text.replace(/@([\w\u4e00-\u9fa5-]+)/g, '').replace(/\s+/g, ' ').trim()
+  return text.replace(/@[\w\u4e00-\u9fa5./-]+/g, '').replace(/\s+/g, ' ').trim()
 }

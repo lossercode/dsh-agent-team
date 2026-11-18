@@ -17,7 +17,11 @@ export function MessageList(props: Props): ReactNode {
   const bottom = useRef<HTMLDivElement>(null)
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }) }, [props.messages.length, props.pending])
   // Highlight regex follows the active group's roster, rebuilt when it changes.
-  const mentionSplit = useMemo(() => new RegExp(`(@(?:${props.members.map(member => member.name).join('|')}))`, 'gi'), [props.members])
+  // Names are model ids with dots/slashes — escape them for RegExp use.
+  const mentionSplit = useMemo(() => new RegExp(
+    `(@(?:${props.members.map(member => member.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}))`,
+    'gi',
+  ), [props.members])
   const memberByName = useMemo(() => {
     const map = new Map<string, GroupMember>()
     for (const member of props.members) map.set(member.name.toLowerCase(), member)
