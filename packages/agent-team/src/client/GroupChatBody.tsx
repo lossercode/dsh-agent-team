@@ -1,8 +1,10 @@
 /** Group chat tab body: group sidebar + per-group timeline with @ mention composer. */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import { type GroupChatRemote, type GroupMember, type GroupRecord, type GroupMessage } from '../shared/groupchat.ts'
 import { MessageList, type ChatMessage } from './MessageList.tsx'
+import { MemberSession } from './MemberSession.tsx'
 import { Composer } from './Composer.tsx'
 import { CreateGroupDialog } from './CreateGroupDialog.tsx'
 import css from './GroupChatBody.module.css'
@@ -16,9 +18,12 @@ const POLL_MS = 1_500
 /** How long a delete failure (running tasks) stays visible in the sidebar. */
 const DELETE_ERROR_MS = 2_500
 
-interface Props extends PropsRuntime<'main'>, PropsLocale<'sidebarGroupChat'> {
+interface Props
+  extends PropsRuntime<'main'>, PropsLocale<'sidebarGroupChat'>, PropsRenderSlots<'groupchat.member.conversation'> {
   /** Host Remote handle injected by the panel registration. */
   readonly groupChat: GroupChatRemote
+  /** Client Session object layer, used to retain a member reply's Session. */
+  readonly sessions: ISessions
 }
 
 /**
@@ -28,7 +33,7 @@ interface Props extends PropsRuntime<'main'>, PropsLocale<'sidebarGroupChat'> {
  * @param props - main-slot occurrence props plus the injected Remote handle.
  * @returns the two-pane group chat layout.
  */
-export function GroupChatBody({ t, groupChat }: Props): ReactNode {
+export function GroupChatBody({ t, groupChat, renderSlot, SessionProvider, sessions }: Props): ReactNode {
   const [groups, setGroups] = useState<readonly GroupRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [messages, setMessages] = useState<readonly ChatMessage[]>([])
@@ -70,6 +75,7 @@ export function GroupChatBody({ t, groupChat }: Props): ReactNode {
           id: message.id,
           from: message.role,
           memberId: message.memberId,
+          sessionId: message.sessionId,
           text: message.text,
           time: new Date(message.createdAt).toTimeString().slice(0, 5),
         })
@@ -158,6 +164,20 @@ export function GroupChatBody({ t, groupChat }: Props): ReactNode {
     void pollOnce()
   }
 
+  /**
+   * Render one agent message's live Conversation. The Session is retained for
+   * the bubble's lifetime so expanding it shows real thinking and tool calls
+   * rather than the text snapshot the host projected.
+   */
+  const renderMemberSession = (message: ChatMessage): ReactNode => {
+    if (message.sessionId === undefined) return null
+    return (
+      <MemberSession sessionId={message.sessionId} SessionProvider={SessionProvider} sessions={sessions}>
+        {renderSlot('groupchat.member.conversation', {})}
+      </MemberSession>
+    )
+  }
+
   return <div className={css.root}>
     {!online && <div className={css.offline}>{t('offline')}</div>}
     <div className={css.columns}>
@@ -198,7 +218,9 @@ export function GroupChatBody({ t, groupChat }: Props): ReactNode {
           </div></div>
         : <div className={css.chat}>
           <MessageList messages={messages} members={members} pending={pending} collapseChars={COLLAPSE_CHARS}
-            expandLabel={t('expand')} collapseLabel={t('collapse')} typingLabel={t('typing')} labels={labels} />
+            expandLabel={t('expand')} collapseLabel={t('collapse')} typingLabel={t('typing')} labels={labels}
+            renderSession={renderMemberSession}
+            detailLabel={t('viewSession')} summaryLabel={t('viewSummary')} />
           <Composer members={members} onSend={send} placeholder={t('placeholder')} sendLabel={t('send')}
             hint={t('hint')} mentionNoneLabel={t('mentionNone')} />
         </div>}

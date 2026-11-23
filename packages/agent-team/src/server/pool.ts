@@ -5,7 +5,7 @@ import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { CatalogProvider, CatalogValue, GroupMember } from '../shared/groupchat.ts'
-import { resolveMentions, stripMentions } from '../shared/groupchat.ts'
+import { resolveMentions, stripMentions, displayText } from '../shared/groupchat.ts'
 import type { GroupChatStore } from './store.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -14,6 +14,14 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
+/**
+ * Default ceiling for one member's turn. A model that accepts the request but
+ * never streams (a stalled upstream) would otherwise hold its bubble until the
+ * global `streamIdleTimeoutMs`, and members share no fate: one stalled route
+ * must not delay the others.
+ */
+const DEFAULT_MEMBER_TIMEOUT_MS = 120_000
+
 /** One in-flight dispatch: the projected message row and its streamed text so far. */
 interface RunningTask {
   seq: number
@@ -21,6 +29,8 @@ interface RunningTask {
   lastText: string
   /** Failure message of the latest failed attempt, if any; cleared by a successful reply. */
   error: string | undefined
+  /** Set once this member's turn exceeded its budget and was reported. */
+  timedOut: boolean
 }
 
 /**
@@ -32,12 +42,24 @@ export class GroupChatWorkers {
   private readonly tasks = new Map<string, RunningTask>()
   private readonly disposers: (() => void)[] = []
   private sessionController: Context['sessionController'] | undefined
+  /** Per-member turn budget; the host may widen it through plugin config. */
+  private readonly timeoutMs: number
 
   /**
    * @param ctx - host context used for sessions, LLM validation, and events.
    * @param store - group chat store receiving groups, user/agent messages.
+   * @param options - optional per-member turn budget in milliseconds.
    */
-  constructor(private readonly ctx: Context, private readonly store: GroupChatStore) {}
+  constructor(
+    private readonly ctx: Context,
+    private readonly store: GroupChatStore,
+    options: { readonly memberTimeoutMs?: number | undefined } = {},
+  ) {
+    const requested = options.memberTimeoutMs
+    this.timeoutMs = requested !== undefined && Number.isFinite(requested) && requested > 0
+      ? requested
+      : DEFAULT_MEMBER_TIMEOUT_MS
+  }
 
   /** Track the Web Session controller, which arrives when the web host is ready. */
   start(): void {
@@ -115,9 +137,10 @@ export class GroupChatWorkers {
    */
   dispatch(group: { readonly id: string, readonly members: readonly GroupMember[] }, text: string): readonly GroupMember[] {
     const mentioned = resolveMentions(text, group.members)
-    const clean = stripMentions(text) || '(空消息)'
+    const clean = stripMentions(text, group.members) || '(空消息)'
+    // Persist the human-readable projection: markers are transport, not history.
     this.store.append({
-      id: `u-${Date.now().toString(36)}`, groupId: group.id, role: 'user', text,
+      id: `u-${Date.now().toString(36)}`, groupId: group.id, role: 'user', text: displayText(text),
       createdAt: new Date().toISOString(),
     })
     if (mentioned.length === 0) {
@@ -147,7 +170,10 @@ export class GroupChatWorkers {
 
     const sessionId = SessionId(`groupchat-${groupId}-${member.id}-${Date.now().toString(36)}`)
     // Register before any await so early events cannot miss the projection.
-    this.tasks.set(sessionId, { seq: -1, memberId: member.id, lastText: '', error: undefined })
+    this.tasks.set(sessionId, {
+      seq: -1, memberId: member.id, lastText: '', error: undefined, timedOut: false,
+    })
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       // Fail fast when the route does not exist before a Session is spent.
       try {
@@ -175,9 +201,35 @@ export class GroupChatWorkers {
       }))
       const sessions = this.ctx.get('sessions')
       if (sessions !== undefined) void sessions.flush(agent.session)
-      // Quiescence of this exact agent is the completion signal; failures above
-      // and below already funnel into rewrite.
-      await agent.whenIdle()
+
+      // Race the turn against this member's own budget. The timeout only
+      // settles the timeline row: the Agent keeps running, so a slow reply
+      // that lands later still appends to its Session and stays inspectable.
+      const budget = this.timeoutMs
+      const outcome = await Promise.race([
+        agent.whenIdle().then(() => 'idle' as const),
+        new Promise<'timeout'>((resolve) => {
+          timer = setTimeout(() => {
+            task.timedOut = true
+            // Best effort: stop the turn so a stalled route releases its slot.
+            try {
+              agent.cancel({ kind: 'hook', reason: 'groupchat member timeout' })
+            } catch {
+              // A turn that already settled is a no-op; the row is reported below either way.
+            }
+            resolve('timeout')
+          }, budget)
+        }),
+      ])
+      if (outcome === 'timeout') {
+        const partial = task.lastText === '' ? '' : `\n\n（超时前已收到部分内容：${task.lastText.slice(0, 400)}）`
+        this.rewrite(
+          sessionId, 'error',
+          `模型调用超时：${member.name} 在 ${Math.round(budget / 1000)} 秒内没有完成响应`
+          + `（${member.provider}/${member.model}）。上游可能已挂起，请检查该模型是否可用。${partial}`,
+        )
+        return
+      }
       if (task.error !== undefined) {
         this.rewrite(sessionId, 'error', `模型调用失败：${task.error}`)
       } else {
@@ -185,6 +237,8 @@ export class GroupChatWorkers {
       }
     } catch (error: unknown) {
       this.rewrite(sessionId, 'error', `执行出错：${String(error)}`)
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
     }
   }
 

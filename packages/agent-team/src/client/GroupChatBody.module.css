@@ -121,6 +121,16 @@
   padding: 0 2px;
 }
 
+/* Embedded member conversation: give the official body its own scrollport so a
+   long run does not stretch the bubble past the timeline. */
+.sessionHost {
+  margin-top: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  padding-top: 6px;
+}
+
 .time {
   color: rgba(255, 255, 255, 0.35);
   font-size: 11px;

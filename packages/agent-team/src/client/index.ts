@@ -7,15 +7,18 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the 'groupchat.member.conversation' SlotMap row into scope.
+import type {} from './MemberConversation.tsx'
 import { GroupChatBody } from './GroupChatBody.tsx'
+import { MemberConversation } from './MemberConversation.tsx'
 import { GroupChatIcon } from './GroupChatIcon.tsx'
 import { en, zh } from './locales.ts'
 
 /** Services needed to mount the Remote handle and the group chat's shell seats. */
-export const inject = ['remote', 'slots', 'locale']
+export const inject = ['remote', 'slots', 'locale', 'sessions']
 
 /** UI lifetime injects: the dotted namespace entry licenses `remote.groupChat` access. */
-const UI_INJECT = ['remote', 'remote.groupChat', 'slots', 'locale']
+const UI_INJECT = ['remote', 'remote.groupChat', 'slots', 'locale', 'sessions']
 
 /** Panel id shared by the sidebar entry and the main-slot page. */
 const PANEL_ID = 'groupchat' as MainPanelId
@@ -33,8 +36,19 @@ function registerUi(child: Context): void {
     { name: 'sidebar.panellist', id: PANEL_ID, order: 20, locale: namespace, label: () => t('title') }, GroupChatIcon,
   )), 'dsh-agent-team.entry')
   child.effect(() => child.slots.inject('main', () => child.slots.register(
-    { name: 'main', key: PANEL_ID, locale: namespace, inject: () => ({ groupChat: child.remote.groupChat }) }, GroupChatBody,
+    {
+      name: 'main',
+      key: PANEL_ID,
+      locale: namespace,
+      inject: () => ({ groupChat: child.remote.groupChat, sessions: child.sessions }),
+      children: { 'groupchat.member.conversation': { kind: 'single', scope: 'session' } },
+    },
+    GroupChatBody,
   )), 'dsh-agent-team.page')
+  // One member bubble hosts the official Conversation body for its Session.
+  child.effect(() => child.slots.inject('groupchat.member.conversation', () => child.slots.register(
+    { name: 'groupchat.member.conversation' }, MemberConversation,
+  )), 'dsh-agent-team.member.conversation')
 }
 
 /**

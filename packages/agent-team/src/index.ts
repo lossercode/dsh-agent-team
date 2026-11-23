@@ -1,5 +1,6 @@
 /** Host-side entry: a Typert Remote Service owning groups and the timelines. */
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   CatalogValue, CreateGroupRequest, CreateGroupValue, DeleteGroupRequest, DeleteGroupValue,
@@ -12,6 +13,15 @@ import { GroupChatWorkers } from './server/pool.ts'
 
 export type * from './types.ts'
 
+/** Plugin settings; only the per-member turn budget is configurable today. */
+export interface Config {
+  /** Milliseconds one member may run before its bubble reports a timeout. */
+  memberTimeoutMs: number
+}
+
+/** Default per-member budget, matching the pool's own fallback. */
+const MEMBER_TIMEOUT_DEFAULT_MS = 120_000
+
 /**
  * Group chat backend as a class plugin: one Remote Service exposing groups
  * management, the model catalog, `send` and `messages` over the official
@@ -21,15 +31,20 @@ export type * from './types.ts'
 export default class GroupChatService extends TypertRemoteService {
   static inject = ['llm', 'storageDomain']
 
+  static Config: z<Config> = z.object({
+    memberTimeoutMs: z.number().step(1_000).min(5_000).max(3_600_000).default(MEMBER_TIMEOUT_DEFAULT_MS),
+  })
+
   private readonly store = new GroupChatStore()
   private readonly workers: GroupChatWorkers
 
   /**
    * @param ctx - host context carrying the LLM resolver and storage domain.
+   * @param config - resolved plugin settings.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'groupChat')
-    this.workers = new GroupChatWorkers(ctx, this.store)
+    this.workers = new GroupChatWorkers(ctx, this.store, { memberTimeoutMs: config.memberTimeoutMs })
     ctx.effect(() => {
       void this.store.open(ctx.storageDomain).catch((error: unknown) => {
         ctx.logger.warn(`dsh-agent-team: storage domain open failed: ${String(error)}`)
@@ -125,7 +140,7 @@ export default class GroupChatService extends TypertRemoteService {
   send(request: SendRequest): Promise<SendValue> {
     const group = this.store.getGroup(request.groupId)
     if (group === undefined) throw new Error('群组不存在或已被删除')
-    if (stripMentions(request.text) !== '') this.workers.dispatch(group, request.text)
+    if (stripMentions(request.text, group.members) !== '') this.workers.dispatch(group, request.text)
     return Promise.resolve({ accepted: true })
   }
 

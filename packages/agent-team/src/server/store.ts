@@ -58,9 +58,18 @@ export class GroupChatStore {
    */
   async open(storageDomain: { open(domain: typeof groupchatDomain): Promise<Domain<typeof groupchatDomain>> }): Promise<void> {
     this.domain = await storageDomain.open(groupchatDomain)
-    for (const key of this.domain.table('messages').keys()) {
+    // In-flight rows cannot survive a host restart: their Session, task, and
+    // timer are all gone, so nothing would ever move them to a terminal state.
+    // Settle them here instead of showing a permanent typing hint.
+    for (const [key, message] of this.domain.table('messages').entries()) {
       const seq = Number.parseInt(key, 10)
       if (Number.isFinite(seq) && seq >= this.seq) this.seq = seq + 1
+      if (message.state !== 'running') continue
+      await this.domain.table('messages').put(key, {
+        ...message,
+        state: 'error',
+        text: '（宿主重启，该轮任务已中断：没有拿到最终结果。）',
+      })
     }
   }
 
